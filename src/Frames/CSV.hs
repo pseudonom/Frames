@@ -240,11 +240,11 @@ readTable = readTableOpt defaultParser
 -- * Template Haskell
 
 -- | Generate a column type.
-recDec :: ColumnTypeable a => [(T.Text, a)] -> Q Type
-recDec = appT [t|Record|] . go
+recDec :: ColumnTypeable a => String -> [(T.Text, a)] -> Q Type
+recDec prefix = appT [t|Record|] . go
   where go [] = return PromotedNilT
         go ((n,t):cs) =
-          [t|($(litT $ strTyLit (T.unpack n)) :-> $(colType t)) ': $(go cs) |]
+          [t|($(litT $ strTyLit (prefix <> T.unpack n)) :-> $(colType t)) ': $(go cs) |]
 
 -- | Massage a column name from a CSV file into a valid Haskell type
 -- identifier.
@@ -302,7 +302,7 @@ colDec prefix colName colTy = (:) <$> mkColTDec colTypeQ colTName'
                          (T.uncons colTName)
         colTName' = mkName $ T.unpack colTName
         colTyQ = colType colTy
-        colTypeQ = [t|$(litT . strTyLit $ T.unpack colName) :-> $colTyQ|]
+        colTypeQ = [t|$(litT . strTyLit $ T.unpack (prefix <> colName)) :-> $colTyQ|]
 
 -- | Splice for manually declaring a column of a given type. For
 -- example, @declareColumn "x2" ''Double@ will declare a type synonym
@@ -376,7 +376,7 @@ tableType' :: forall a. (ColumnTypeable a, Monoid a)
 tableType' (RowGen {..}) csvFile =
     pure . TySynD (mkName rowTypeName) [] <$>
     (runIO (readColHeaders opts csvFile) >>= recDec')
-  where recDec' = recDec :: [(T.Text, a)] -> Q Type
+  where recDec' = recDec tablePrefix :: [(T.Text, a)] -> Q Type
         colNames' | null columnNames = Nothing
                   | otherwise = Just (map T.pack columnNames)
         opts = ParserOptions colNames' separator (RFC4180Quoting '\"')
@@ -399,7 +399,7 @@ tableTypesText' (RowGen {..}) csvFile =
      optsDec <- valD (varP optsName) (normalB $ lift opts) []
      colDecs <- concat <$> mapM (uncurry $ colDec (T.pack tablePrefix)) headers
      return (recTy : optsTy : optsDec : colDecs)
-  where recDec' = recDec :: [(T.Text, a)] -> Q Type
+  where recDec' = recDec tablePrefix :: [(T.Text, a)] -> Q Type
         colNames' | null columnNames = Nothing
                   | otherwise = Just (map T.pack columnNames)
         opts = ParserOptions colNames' separator (RFC4180Quoting '\"')
@@ -423,7 +423,7 @@ tableTypes' (RowGen {..}) csvFile =
      return (recTy : optsTy : optsDec : colDecs)
      -- (:) <$> (tySynD (mkName n) [] (recDec' headers))
      --     <*> (concat <$> mapM (uncurry $ colDec (T.pack prefix)) headers)
-  where recDec' = recDec :: [(T.Text, a)] -> Q Type
+  where recDec' = recDec tablePrefix :: [(T.Text, a)] -> Q Type
         colNames' | null columnNames = Nothing
                   | otherwise = Just (map T.pack columnNames)
         opts = ParserOptions colNames' separator (RFC4180Quoting '\"')
